@@ -2,7 +2,20 @@
   <img src="docs/app_icon.png" alt="Feurstagram Icon" width="128">
 </p>
 
-# Feurstagram - Distraction-Free Instagram
+<h1 align="center">Feurstagram</h1>
+<p align="center">Distraction-Free Instagram</p>
+
+<p align="center">
+  <a href="../../releases/latest">
+    <img src="https://img.shields.io/github/v/release/jean-voila/FeurStagram?style=for-the-badge&label=Download%20APK&color=10a37f" alt="Download APK">
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://komarev.com/ghpvc/?username=jean-voila-feurstagram&label=Views&color=gray&style=flat" alt="Views">
+</p>
+
+---
 
 A patching toolkit that removes addictive features from Instagram while keeping essential functionality.
 
