@@ -22,8 +22,10 @@ NC='\033[0m' # No Color
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATCHES_DIR="$SCRIPT_DIR/patches"
-KEYSTORE="$SCRIPT_DIR/feurstagram.keystore"
-KEYSTORE_PASS="android"
+KEYSTORE="${FEURSTAGRAM_KEYSTORE:-$SCRIPT_DIR/feurstagram.keystore}"
+KEYSTORE_PASS="${FEURSTAGRAM_KEYSTORE_PASS:-}"
+KEY_ALIAS="${FEURSTAGRAM_KEY_ALIAS:-feurstagram}"
+KEY_PASS="${FEURSTAGRAM_KEY_PASS:-$KEYSTORE_PASS}"
 
 # Find Android build-tools
 find_build_tools() {
@@ -83,6 +85,18 @@ check_dependencies() {
     
     ZIPALIGN="$BUILD_TOOLS/zipalign"
     APKSIGNER="$BUILD_TOOLS/apksigner"
+
+    if [ ! -f "$KEYSTORE" ]; then
+        echo -e "${RED}Error: keystore not found at: $KEYSTORE${NC}"
+        echo "  Set FEURSTAGRAM_KEYSTORE to your local keystore path."
+        exit 1
+    fi
+
+    if [ -z "$KEYSTORE_PASS" ]; then
+        echo -e "${RED}Error: FEURSTAGRAM_KEYSTORE_PASS is not set.${NC}"
+        echo "  Example: FEURSTAGRAM_KEYSTORE_PASS=your_password ./patch.sh instagram.apk"
+        exit 1
+    fi
     
     echo -e "${GREEN}✓ All dependencies found${NC}"
     echo "  apktool: $(which apktool)"
@@ -93,7 +107,11 @@ check_dependencies() {
 patch_apk() {
     local INPUT_APK="$1"
     local WORK_DIR="$SCRIPT_DIR/instagram_source"
-    local OUTPUT_APK="$SCRIPT_DIR/feurstagram_patched.apk"
+    local INPUT_BASENAME
+    INPUT_BASENAME="$(basename "$INPUT_APK" .apk)"
+    local OUTPUT_DIR="$SCRIPT_DIR/artifacts"
+    local OUTPUT_APK="$OUTPUT_DIR/feurstagram_patched_${INPUT_BASENAME}.apk"
+    mkdir -p "$OUTPUT_DIR"
     
     # Step 1: Decompile
     echo -e "\n${YELLOW}[1/6] Decompiling APK...${NC}"
@@ -132,7 +150,7 @@ patch_apk() {
     # Step 6: Sign APK
     echo -e "\n${YELLOW}[6/6] Signing APK...${NC}"
     "$ZIPALIGN" -f 4 "$SCRIPT_DIR/feurstagram_unsigned.apk" "$SCRIPT_DIR/feurstagram_aligned.apk"
-    "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass "pass:$KEYSTORE_PASS" --out "$OUTPUT_APK" "$SCRIPT_DIR/feurstagram_aligned.apk"
+    "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:$KEYSTORE_PASS" --key-pass "pass:$KEY_PASS" --out "$OUTPUT_APK" "$SCRIPT_DIR/feurstagram_aligned.apk"
     
     # Cleanup intermediate files
     rm -f "$SCRIPT_DIR/feurstagram_unsigned.apk" "$SCRIPT_DIR/feurstagram_aligned.apk"
@@ -151,6 +169,12 @@ usage() {
     echo "Usage: $0 <instagram.apk>"
     echo ""
     echo "Patches an Instagram APK to create Feurstagram (Distraction-Free Instagram)"
+    echo ""
+    echo "Signing environment variables:"
+    echo "  FEURSTAGRAM_KEYSTORE       Path to keystore (default: ./feurstagram.keystore)"
+    echo "  FEURSTAGRAM_KEYSTORE_PASS  Keystore password (required)"
+    echo "  FEURSTAGRAM_KEY_ALIAS      Key alias (default: feurstagram)"
+    echo "  FEURSTAGRAM_KEY_PASS       Key password (default: same as keystore password)"
     echo ""
     echo "Features disabled (via network blocking):"
     echo "  - Feed posts (Stories remain visible)"

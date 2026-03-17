@@ -95,7 +95,7 @@ Feurstagram/
 ├── patch.sh                 # Main patching script
 ├── cleanup.sh               # Removes build artifacts
 ├── apply_network_patch.py   # Network hook patch logic
-├── feurstagram.keystore     # Signing keystore (password: android)
+├── artifacts/               # Patched APK output directory
 └── patches/
     ├── FeurConfig.smali     # Configuration class
     └── FeurHooks.smali      # Network blocking hooks
@@ -107,7 +107,16 @@ The patched APK needs to be signed before installation. The patcher uses a keyst
 
 ### Generating a Keystore
 
-If `feurstagram.keystore` doesn't exist, create one:
+Create a local keystore (do not commit it), then run `patch.sh` with env vars:
+
+```bash
+FEURSTAGRAM_KEYSTORE=./feurstagram.keystore \
+FEURSTAGRAM_KEYSTORE_PASS=your_store_password \
+FEURSTAGRAM_KEY_ALIAS=feurstagram \
+./patch.sh instagram.apk
+```
+
+If `feurstagram.keystore` doesn't exist yet, create one:
 
 ```bash
 keytool -genkey -v -keystore feurstagram.keystore -alias feurstagram \
@@ -122,7 +131,6 @@ keytool -genkey -v -keystore feurstagram.keystore -alias feurstagram \
 |----------|-------|
 | Filename | `feurstagram.keystore` |
 | Alias | `feurstagram` |
-| Password | `android` |
 | Algorithm | RSA 2048-bit |
 | Validity | 10,000 days |
 
@@ -161,14 +169,6 @@ This is a personal project I'm sharing with the community. Contributions are wel
 - 📋 **Copy it** - Use the code however you want
 - ✨ **Enhance it** - Build something even better
 
-## Donations
-
-If you find this project useful and want to support its development, you can send a donation via Bitcoin:
-
-**BTC:** `bc1qa0xyd9n0fy0hhk2mzg5g5zy8l7lc0t728f0jnq`
-
-Your support is greatly appreciated! 🙏
-
 ## License
 
-This project is released under the Unlicense - you can do whatever you want with it. See [LICENSE](LICENSE) for details.
+This project is released under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.

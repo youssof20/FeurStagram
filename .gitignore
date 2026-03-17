@@ -1,9 +1,14 @@
 # Build outputs
 *.apk
 *.idsig
+artifacts/
 
 # Decompiled source (generated during patching)
 instagram_source/
+
+# Local signing material
+*.keystore
+*.jks
 
 # IDE
 *.iml
