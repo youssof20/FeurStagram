@@ -44,6 +44,8 @@ You have two options:
 | **Feed Posts** | ❌ Blocked | Network-level blocking |
 | **Explore Content** | ❌ Blocked | Network-level blocking |
 | **Reels Content** | ❌ Redirected | Redirects to DMs |
+| **Analytics & telemetry** | ❌ Blocked | See [Blocked network paths](#blocked-network-paths) |
+| **Shopping / commerce preloads** | ❌ Blocked | See [Blocked network paths](#blocked-network-paths) |
 
 ## What Still Works
 
@@ -55,6 +57,7 @@ You have two options:
 | **Reels in DMs** | ✅ Works |
 | **Search** | ✅ Works |
 | **Notifications** | ✅ Works |
+
 
 ## Requirements
 
@@ -154,7 +157,24 @@ adb logcat -s "Feurstagram:D"
 Intercepts fragment loading in the main tab host. When Instagram tries to load `fragment_clips` (Reels), it redirects to `fragment_direct_tab` (DMs).
 
 ### Network Blocking
-Hooks into `TigonServiceLayer` (a named, non-obfuscated class) and blocks requests to `/feed/timeline/` and `/discover/topical_explore`.
+Hooks into `TigonServiceLayer` (a named, non-obfuscated class). Before each request, `FeurHooks.throwIfBlocked()` runs on the request URI; blocked calls fail with an `IOException` so the stack unwinds cleanly (same pattern as the original feed/explore blocks).
+
+#### Blocked network paths
+
+| Path / pattern | Purpose |
+|----------------|---------|
+| `/feed/timeline/` | Home feed posts |
+| `/discover/topical_explore` | Explore tab content |
+| `/clips/discover` | Reels discovery feed |
+| `/logging/` | Client event logging |
+| `/async_ads_privacy/` | Ad-related tracking |
+| `/async_critical_notices/` | Engagement nudge analytics |
+| `/api/v1/media/.../seen/` (path contains `/api/v1/media/` and `/seen`) | Post “seen” tracking |
+| `/api/v1/fbupload/` | Telemetry upload |
+| `/api/v1/stats/` | Performance / usage stats |
+| `/api/v1/commerce/`, `/api/v1/shopping/`, `/api/v1/sellable_items/` | Shopping / commerce preloads |
+
+Matching uses `String.contains()` on the URI path. Instagram changes URL shapes over time; adjust `patches/FeurHooks.smali` if a block stops matching.
 
 ## Updating for New Instagram Versions
 
