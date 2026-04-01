@@ -4,10 +4,17 @@
 # Feurstagram Network Hooks
 # Intercepts network requests and blocks unwanted content
 #
-# Blocked endpoints:
-#   - /feed/timeline/ (feed posts - Stories load from /feed/reels_tray/ separately)
+# Blocked endpoints (path unless noted):
+#   - /feed/timeline/ (home feed posts — Stories load from /feed/reels_tray/ separately)
 #   - /discover/topical_explore (explore content)
 #   - /clips/discover (reels discovery)
+#   - /logging/ (client event logging)
+#   - /async_ads_privacy/ (ad tracking)
+#   - /async_critical_notices/ (engagement nudge analytics)
+#   - /api/v1/media/.../seen/ ("seen" tracking for posts)
+#   - /api/v1/fbupload/ (telemetry upload)
+#   - /api/v1/stats/ (performance/usage stats)
+#   - /api/v1/commerce/, /api/v1/shopping/, /api/v1/sellable_items/ (shopping preloads)
 #
 # Note: /clips/home/ is NOT blocked because the Reels tab is already
 #       redirected at the UI level - users can still view reels shared in DMs
@@ -55,6 +62,32 @@
 .end method
 
 
+# True when path matches /api/v1/media/.../seen/ (post "seen" tracking).
+.method private static shouldBlockMediaSeen(Ljava/lang/String;)Z
+    .locals 2
+
+    if-eqz p0, :cond_false
+
+    const-string v0, "/api/v1/media/"
+    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v1
+    if-eqz v1, :cond_false
+
+    const-string v0, "/seen"
+    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v1
+    if-nez v1, :cond_true
+
+    :cond_false
+    const/4 v0, 0x0
+    return v0
+
+    :cond_true
+    const/4 v0, 0x1
+    return v0
+.end method
+
+
 # Main hook: Throws IOException if request should be blocked
 # Called from TigonServiceLayer before each network request
 .method public static throwIfBlocked(Ljava/net/URI;)V
@@ -63,7 +96,6 @@
     # Log the request (comment out for production)
     invoke-static {p0}, Lcom/feurstagram/FeurHooks;->logRequest(Ljava/net/URI;)V
 
-    # Get the path from URI
     invoke-virtual {p0}, Ljava/net/URI;->getPath()Ljava/lang/String;
     move-result-object v0
 
@@ -89,6 +121,57 @@
 
     # Block reels discovery
     const-string v1, "/clips/discover"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    # Client event logging
+    const-string v1, "/logging/"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    # Ad / privacy tracking pings
+    const-string v1, "/async_ads_privacy/"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    # Engagement nudge analytics
+    const-string v1, "/async_critical_notices/"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    # Post "seen" tracking
+    invoke-static {v0}, Lcom/feurstagram/FeurHooks;->shouldBlockMediaSeen(Ljava/lang/String;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    # Facebook telemetry upload
+    const-string v1, "/api/v1/fbupload/"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    # Performance / usage stats
+    const-string v1, "/api/v1/stats/"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    # Shopping / commerce preloads
+    const-string v1, "/api/v1/commerce/"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    const-string v1, "/api/v1/shopping/"
+    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-nez v2, :cond_block
+
+    const-string v1, "/api/v1/sellable_items/"
     invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
     move-result v2
     if-nez v2, :cond_block
