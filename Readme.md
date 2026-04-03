@@ -6,7 +6,7 @@
 <p align="center">Distraction-Free Instagram</p>
 
 <p align="center">
-  <a href="../../releases/latest">
+  <a href="https://github.com/jean-voila/FeurStagram/releases/latest">
     <img src="https://img.shields.io/github/v/release/jean-voila/FeurStagram?style=for-the-badge&label=Download%20APK&color=10a37f" alt="Download APK">
   </a>
 </p>

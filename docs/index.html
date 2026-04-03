@@ -238,6 +238,114 @@
             font-weight: 400;
         }
 
+        .download-drawer {
+            position: relative;
+            display: inline-flex;
+            align-items: stretch;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .download-drawer:hover,
+        .download-drawer:focus-within {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 255, 255, 0.15);
+        }
+
+        .download-main {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        .download-main:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        .download-drawer:hover .download-main,
+        .download-drawer:focus-within .download-main {
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .download-toggle {
+            width: 44px;
+            padding: 0;
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+            border-left: 1px solid rgba(0, 0, 0, 0.14);
+            justify-content: center;
+            background: var(--text-primary);
+            color: var(--bg-primary);
+        }
+
+        .download-toggle:hover,
+        .download-drawer:focus-within .download-toggle {
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .download-toggle svg {
+            width: 16px;
+            height: 16px;
+            transition: transform 0.2s ease;
+        }
+
+        .download-drawer.open .download-toggle svg {
+            transform: rotate(180deg);
+        }
+
+        .download-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 340px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 8px;
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.35);
+            display: none;
+            z-index: 30;
+        }
+
+        .download-drawer.open .download-menu {
+            display: block;
+        }
+
+        .download-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 9px;
+            text-decoration: none;
+            color: var(--text-primary);
+            transition: background-color 0.15s ease;
+        }
+
+        .download-option:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .download-option-name {
+            font-size: 0.88rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .download-option-size {
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+            flex-shrink: 0;
+        }
+
+        .download-empty {
+            padding: 12px;
+            font-size: 0.85rem;
+            color: var(--text-tertiary);
+        }
+
         .developed-by {
             margin-top: 24px;
             color: var(--text-tertiary);
@@ -396,6 +504,20 @@
                 width: 100%;
             }
 
+            .download-drawer {
+                width: 100%;
+            }
+
+            .download-main {
+                width: calc(100% - 44px);
+            }
+
+            .download-menu {
+                left: 0;
+                right: auto;
+                min-width: 100%;
+            }
+
             .feature-card {
                 padding: 24px;
             }
@@ -424,16 +546,27 @@
                 feed.</p>
 
             <div class="button-group">
-                <a href="https://github.com/jean-voila/FeurStagram/releases/latest" class="btn btn-primary"
-                    id="btn-download" onclick="gtag('event', 'download_apk'); return true;">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 16l-6-6h4V4h4v6h4l-6 6zm-8 2h16v2H4v-2z" />
-                    </svg>
-                    <span class="btn-text">
-                        <span class="btn-main">Download APK</span>
-                        <span class="btn-meta" id="release-info">Loading...</span>
-                    </span>
-                </a>
+                <div class="download-drawer" id="download-drawer">
+                    <a href="https://github.com/jean-voila/FeurStagram/releases/latest"
+                        class="btn btn-primary download-main" id="btn-download"
+                        onclick="gtag('event', 'download_apk'); return true;">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 16l-6-6h4V4h4v6h4l-6 6zm-8 2h16v2H4v-2z" />
+                        </svg>
+                        <span class="btn-text">
+                            <span class="btn-main">Download APK</span>
+                            <span class="btn-meta" id="release-info">Loading...</span>
+                        </span>
+                    </a>
+                    <button type="button" class="btn download-toggle" id="btn-download-toggle"
+                        aria-label="Choose APK file" aria-haspopup="true" aria-expanded="false">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                            aria-hidden="true">
+                            <path d="M7 10l5 5 5-5z" />
+                        </svg>
+                    </button>
+                    <div class="download-menu" id="download-menu"></div>
+                </div>
                 <a href="https://github.com/jean-voila/FeurStagram" class="btn btn-secondary" id="btn-source"
                     target="_blank" rel="noopener" onclick="gtag('event', 'view_source_code');">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -443,8 +576,7 @@
                     Source Code
                 </a>
             </div>
-            <p class="developed-by">Developed with ♥ by <a href="https://github.com/jean-voila" target="_blank"
-                    rel="noopener">jean-voila</a></p>
+            <p class="developed-by">Developed with ♥ by <span id="contributors-list">loading contributors...</span></p>
         </section>
 
         <section class="features container">
@@ -535,6 +667,120 @@
             initTilt(card, 8);
         });
 
+        function getApkAssets(assets) {
+            if (!Array.isArray(assets)) {
+                return [];
+            }
+
+            return assets.filter((asset) => {
+                if (!asset || typeof asset.name !== 'string') {
+                    return false;
+                }
+
+                const lowerName = asset.name.toLowerCase();
+                return lowerName.endsWith('.apk') || lowerName.endsWith('.apkm');
+            });
+        }
+
+        function formatBytes(bytes) {
+            if (!Number.isFinite(bytes) || bytes <= 0) {
+                return '';
+            }
+
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let value = bytes;
+            let unitIndex = 0;
+
+            while (value >= 1024 && unitIndex < units.length - 1) {
+                value /= 1024;
+                unitIndex += 1;
+            }
+
+            const rounded = unitIndex === 0 ? Math.round(value) : value.toFixed(1);
+            return `${rounded} ${units[unitIndex]}`;
+        }
+
+        function closeDownloadDrawer() {
+            const drawer = document.getElementById('download-drawer');
+            const toggle = document.getElementById('btn-download-toggle');
+            if (!drawer || !toggle) {
+                return;
+            }
+
+            drawer.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+
+        function renderDownloadMenu(apkAssets) {
+            const menu = document.getElementById('download-menu');
+            const toggle = document.getElementById('btn-download-toggle');
+            if (!menu || !toggle) {
+                return;
+            }
+
+            menu.innerHTML = '';
+
+            if (!apkAssets.length) {
+                toggle.disabled = true;
+                menu.innerHTML = '<div class="download-empty">No APK asset found for this release.</div>';
+                return;
+            }
+
+            toggle.disabled = false;
+
+            apkAssets.forEach((asset) => {
+                const option = document.createElement('a');
+                option.className = 'download-option';
+                option.href = asset.browser_download_url;
+                option.target = '_blank';
+                option.rel = 'noopener';
+
+                const name = document.createElement('span');
+                name.className = 'download-option-name';
+                name.textContent = asset.name;
+
+                const size = document.createElement('span');
+                size.className = 'download-option-size';
+                size.textContent = formatBytes(asset.size);
+
+                option.appendChild(name);
+                option.appendChild(size);
+
+                option.addEventListener('click', () => {
+                    gtag('event', 'download_apk_asset', { asset_name: asset.name });
+                    closeDownloadDrawer();
+                });
+
+                menu.appendChild(option);
+            });
+        }
+
+        function initDownloadDrawer() {
+            const drawer = document.getElementById('download-drawer');
+            const toggle = document.getElementById('btn-download-toggle');
+            if (!drawer || !toggle) {
+                return;
+            }
+
+            toggle.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const isOpen = drawer.classList.toggle('open');
+                toggle.setAttribute('aria-expanded', String(isOpen));
+            });
+
+            document.addEventListener('click', (event) => {
+                if (!drawer.contains(event.target)) {
+                    closeDownloadDrawer();
+                }
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    closeDownloadDrawer();
+                }
+            });
+        }
+
         // Fetch latest release from GitHub
         async function fetchLatestRelease() {
             try {
@@ -551,18 +797,44 @@
 
                 // Update download link to direct APK
                 const downloadBtn = document.getElementById('btn-download');
-                if (data.assets && data.assets.length > 0) {
-                    const apkAsset = data.assets.find(a => a.name.endsWith('.apk'));
-                    if (apkAsset) {
-                        downloadBtn.href = apkAsset.browser_download_url;
-                    }
+                const apkAssets = getApkAssets(data.assets);
+                renderDownloadMenu(apkAssets);
+
+                if (apkAssets.length > 0 && downloadBtn) {
+                    downloadBtn.href = apkAssets[0].browser_download_url;
                 }
             } catch (error) {
                 document.getElementById('release-info').textContent = 'Latest version';
+                renderDownloadMenu([]);
             }
         }
 
+        async function fetchContributors() {
+            const contributorsEl = document.getElementById('contributors-list');
+            if (!contributorsEl) {
+                return;
+            }
+
+            try {
+                const response = await fetch('https://api.github.com/repos/jean-voila/FeurStagram/contributors?per_page=100');
+                const contributors = await response.json();
+
+                if (!Array.isArray(contributors) || contributors.length === 0) {
+                    contributorsEl.textContent = 'the contributors';
+                    return;
+                }
+
+                contributorsEl.innerHTML = contributors
+                    .map((contributor) => `<a href="${contributor.html_url}" target="_blank" rel="noopener">${contributor.login}</a>`)
+                    .join(', ');
+            } catch (error) {
+                contributorsEl.textContent = 'the contributors';
+            }
+        }
+
+        initDownloadDrawer();
         fetchLatestRelease();
+        fetchContributors();
     </script>
 </body>
 
