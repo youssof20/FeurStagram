@@ -9,6 +9,9 @@
   <a href="https://github.com/jean-voila/FeurStagram/releases/latest">
     <img src="https://img.shields.io/github/v/release/jean-voila/FeurStagram?style=for-the-badge&label=Download%20APK&color=10a37f" alt="Download APK">
   </a>
+  <a href="https://discord.gg/Z9QvMw8s76">
+    <img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord">
+  </a>
 </p>
 
 <p align="center">
@@ -29,6 +32,12 @@ An open source Instagram app for Android without distractions.
 I built this project for myself as an alternative to [DFInstagram](https://www.distractionfreeapps.com/) which hasn't been maintained for a long time and was difficult to update. I'm sharing it so others can do the same for themselves.
 
 **This project is entirely free and open-source.** Feel free to fork, copy, enhance, or submit pull requests - do whatever you want with it!
+
+## Community
+
+Join the Discord server to get support, follow updates, and discuss development:
+
+- https://discord.gg/Z9QvMw8s76
 
 ## Installation
 
