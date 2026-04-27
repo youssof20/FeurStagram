@@ -144,6 +144,7 @@ PY
     cp "$PATCHES_DIR/FeurHardcoreButtonClickListener.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
     cp "$PATCHES_DIR/FeurHardcoreConfirmClickListener.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
     cp "$PATCHES_DIR/FeurHardcoreConfirmButtonClickListener.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
+    cp "$PATCHES_DIR/FeurNotificationChannels.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
     echo -e "${GREEN}✓ Added FeurStagram smali classes${NC}"
 
     echo -e "\n${YELLOW}[3/6] Patching network layer...${NC}"
@@ -164,15 +165,55 @@ PY
         python3 "$SCRIPT_DIR/apply_clone_patch.py" "$WORK_DIR/AndroidManifest.xml" "$CLONE_PACKAGE"
         python3 "$SCRIPT_DIR/apply_clone_resources_patch.py" "$WORK_DIR/resources.arsc" "$CLONE_PACKAGE"
         python3 "$SCRIPT_DIR/apply_clone_runtime_patch.py" "$WORK_DIR"
+        # Resolve Instagram's notification-channel enum name (Instagram
+        # reshuffles it every release) and wire FeurNotificationChannels to
+        # the version-specific class. Only needed for clone builds — in
+        # non-clone mode the package is "com.instagram.android" and
+        # FeurNotificationChannels short-circuits without using the enum.
+        python3 "$SCRIPT_DIR/apply_clone_notifications_patch.py" "$WORK_DIR"
         echo -e "${GREEN}✓ Manifest/resources rewritten to ${CLONE_PACKAGE}${NC}"
     fi
+
+    # Force native libraries to be stored uncompressed in the rebuilt APK.
+    # Instagram 426+ ships per-loader manifest .so files (e.g.
+    # libbase.soloader-manifest.so) that SoLoader opens via
+    # AssetManager.openNonAssetFd, which requires the entry to be STORED.
+    # apktool's default rebuild deflates everything not listed in apktool.yml's
+    # doNotCompress, so we inject a "so" entry up front. Idempotent.
+    python3 - "$WORK_DIR/apktool.yml" <<'PY'
+import sys
+path = sys.argv[1]
+with open(path, "r") as f:
+    lines = f.readlines()
+# locate the doNotCompress: header and ensure "- so" is among its entries.
+out = []
+i = 0
+inserted = False
+while i < len(lines):
+    out.append(lines[i])
+    if lines[i].rstrip() == "doNotCompress:" and not inserted:
+        # collect existing entries for this list
+        j = i + 1
+        existing = []
+        while j < len(lines) and lines[j].startswith("- "):
+            existing.append(lines[j].rstrip())
+            j += 1
+        if "- so" not in existing:
+            out.append("- so\n")
+        inserted = True
+    i += 1
+with open(path, "w") as f:
+    f.writelines(out)
+PY
 
     echo -e "\n${YELLOW}[5/6] Building APK...${NC}"
     apktool b "$WORK_DIR" -o "$SCRIPT_DIR/feurstagram_unsigned.apk"
     echo -e "${GREEN}✓ APK built${NC}"
 
     echo -e "\n${YELLOW}[6/6] Signing APK...${NC}"
-    "$ZIPALIGN" -f 4 "$SCRIPT_DIR/feurstagram_unsigned.apk" "$SCRIPT_DIR/feurstagram_aligned.apk"
+    # -p page-aligns native .so entries so SoLoader can mmap them without an
+    # intermediate copy. Required when libs are stored uncompressed.
+    "$ZIPALIGN" -p -f 4 "$SCRIPT_DIR/feurstagram_unsigned.apk" "$SCRIPT_DIR/feurstagram_aligned.apk"
     "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:$KEYSTORE_PASS" --key-pass "pass:$KEY_PASS" --out "$OUTPUT_APK" "$SCRIPT_DIR/feurstagram_aligned.apk"
     rm -f "$SCRIPT_DIR/feurstagram_unsigned.apk" "$SCRIPT_DIR/feurstagram_aligned.apk"
     echo -e "${GREEN}✓ APK signed${NC}"
