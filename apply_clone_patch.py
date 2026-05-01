@@ -1,64 +1,95 @@
 #!/usr/bin/env python3
 """
-Clone patch: change the APK's application ID so a patched FeurStagram build
-can be installed alongside a stock Instagram.
+Clone patch (Instafel-style logic, single-APK output): rewrite the
+decompiled APK so it installs side-by-side with a stock Instagram.
 
-A full apktool decode of Instagram's resources does not round-trip cleanly
-(aapt2 rejects apktool's encoded layout refs), so we keep the fast
-``apktool d --no-res`` flow and edit the binary AndroidManifest.xml in
-place.
+We can't fully `apktool d` Instagram's resources, because apktool decodes
+its packed layout table (values/layouts.xml entries like
+"L|AEE00|29C|13B3") into a form that aapt2 refuses to recompile.
+Instafel sidesteps the problem by emitting an overlay APK instead of
+rebuilding sources, but FeurStagram ships a single APK, so we keep the
+fast `apktool d --no-res` flow and patch the *binary* AndroidManifest.xml
+and resources.arsc in place. The smali phase then propagates the
+manifest renames into bytecode literals — the part that the original
+FeurStagram clone implementation was missing.
 
-Approach:
-  1. Parse the AXML: outer header, string pool, XML element chunks.
-  2. Walk the XML chunks and, for every attribute we care about
-     (``package``, ``authorities``, ``taskAffinity``, ``permission``,
-     plus ``name`` on permission tags), record its location and the
-     desired new value.
-  3. Add each new value to the string pool as a *new* entry (dedup'd on
-     value), then rewrite the targeted attribute's string reference to
-     point at the new index. Other references to the original pool entry
-     (notably ``android:name`` on <provider>/<activity>, which happens to
-     share the same literal with an authority because Instagram names
-     some providers after their class) remain intact.
-  4. Re-emit the string pool with the extra entries appended; every
-     other chunk stays byte-identical.
+Phases (mirrors mamiiblt/instafel CloneGeneral + ClonePackageReplacer):
 
-Renaming rules:
-  * ``com.instagram.android`` and ``com.instagram.android.*`` -> new package
-  * For authorities / taskAffinity only, ``com.instagram.*`` is also
-    retargeted (Instagram declares providers like
-    ``com.instagram.fileprovider`` outside the formal package namespace,
-    and those would clash with a stock install otherwise).
+  1. AndroidManifest.xml (binary AXML):
+       - rewrite the root <manifest package="..."> attribute
+       - rewrite each <provider android:authorities="..."> per the
+         Instafel rule (replace inline if it contains com.instagram.android,
+         otherwise prefix with the new package), and remember
+         {old_authority -> new_authority} for the smali phase
+       - rewrite <permission> / <uses-permission[-sdk-23]> android:name
+         when it contains com.instagram.android, except for blacklisted
+         OS / OEM / cross-app permission prefixes
+       - rewrite android:taskAffinity the same way as authorities
 
-Per-attribute whitelist:
-  * Permission renames target only this app's own permissions
-    (prefix ``com.instagram.android``). External permissions
-    (``com.instagram.direct.*``) are declared by other apps and must keep
-    their original names so ``<uses-permission>`` still refers to them.
+  2. resources.arsc (binary): rewrite the package name in every
+     RES_TABLE_PACKAGE chunk so resource lookups resolve under the new
+     package id (Resources.getIdentifier and friends).
+
+  3. smali tree: for every .smali file (excluding the com/feurstagram/*
+     classes we inject ourselves), apply phase-1 authority renames and
+     replace the literal "com.instagram.android" const-strings with the
+     new package name. Quoting prevents matches against class
+     identifiers (which are slash-separated and never quoted anyway).
 """
 
+from __future__ import annotations
+
+import argparse
+import os
 import struct
 import sys
 
 
+OLD_PACKAGE = "com.instagram.android"
+DEFAULT_NEW_PACKAGE = "com.instagram.android.feurstagram"
+
+# Permission name prefixes that must NEVER be rewritten — declared by
+# the OS / Google / OEMs / sister apps. Renaming them on our side
+# breaks <uses-permission> resolution and Play Services.
+# Source: instafel patcher-core/src/main/resources/blacklisted_perms.json
+BLACKLISTED_PERM_PREFIXES = (
+    "com.google.android",
+    "com.amazon.device",
+    "com.instagram.direct",
+    ".permission.RECEIVE_ADM_MESSAGE",
+    "android.permission",
+    "com.android",
+    "com.htc",
+    "com.huawei",
+    "com.sonymobile",
+    "com.sonyericsson",
+    "android.hardware",
+)
+
+PERMISSION_TAGS = ("permission", "uses-permission", "uses-permission-sdk-23")
+
+SKIP_SMALI_PATH_FRAGMENT = os.path.join("com", "feurstagram") + os.sep
+
+
+# ---------- AXML constants ----------
 CHUNK_XML = 0x0003
 CHUNK_STRING_POOL = 0x0001
 CHUNK_XML_START_ELEMENT = 0x0102
-
 FLAG_UTF8 = 1 << 8
 TYPE_STRING = 0x03
-
-OLD_PACKAGE = "com.instagram.android"
-SHORT_PREFIX = "com.instagram."
-
-PERMISSION_TAGS = {"permission", "uses-permission", "uses-permission-sdk-23"}
-
-# Layout of a StartElement chunk's attribute entry, for clarity:
 ATTR_FMT = "<IIIHBBI"
-ATTR_SIZE = struct.calcsize(ATTR_FMT)  # 20 bytes
+
+# ---------- resources.arsc constants ----------
+RES_TABLE_TYPE = 0x0002
+RES_TABLE_PACKAGE_TYPE = 0x0200
+PACKAGE_NAME_BYTES = 256  # UTF-16LE char16_t[128]
 
 
-def decode_pool_string(data: bytes, offset: int, is_utf8: bool) -> str:
+# ============================================================
+# AXML helpers (string pool encode/decode)
+# ============================================================
+
+def _decode_pool_string(data: bytes, offset: int, is_utf8: bool) -> str:
     if is_utf8:
         i = offset
         b = data[i]
@@ -81,7 +112,7 @@ def decode_pool_string(data: bytes, offset: int, is_utf8: bool) -> str:
     return data[i:i + u16_len * 2].decode("utf-16-le")
 
 
-def encode_pool_string(text: str, is_utf8: bool) -> bytes:
+def _encode_pool_string(text: str, is_utf8: bool) -> bytes:
     if is_utf8:
         u8 = text.encode("utf-8")
         u16_len = len(text)
@@ -105,46 +136,80 @@ def encode_pool_string(text: str, is_utf8: bool) -> bytes:
     return struct.pack("<H", u16_len) + utf16 + b"\x00\x00"
 
 
-def rename_authority(value: str, new_package: str) -> str:
+# ============================================================
+# Renaming rules (instafel CloneGeneral)
+# ============================================================
+
+def _is_blacklisted_perm(name: str) -> bool:
+    return any(name.startswith(prefix) for prefix in BLACKLISTED_PERM_PREFIXES)
+
+
+def _rename_one_authority(authority: str, new_package: str) -> str:
+    if OLD_PACKAGE in authority:
+        return authority.replace(OLD_PACKAGE, new_package)
+    return f"{new_package}.{authority}"
+
+
+def _rename_authorities_value(value: str, new_package: str, mapping: dict[str, str]) -> str:
+    """Rewrite a (possibly semicolon-joined) authorities attribute and
+    record per-segment renames so the smali phase can find them."""
+    parts = value.split(";")
+    new_parts: list[str] = []
+    for part in parts:
+        new_part = _rename_one_authority(part, new_package)
+        if new_part != part:
+            mapping[part] = new_part
+        new_parts.append(new_part)
+    return ";".join(new_parts)
+
+
+def _rename_package_name(value: str, new_package: str) -> str:
     if value == OLD_PACKAGE or value.startswith(OLD_PACKAGE + "."):
         return new_package + value[len(OLD_PACKAGE):]
-    if value.startswith(SHORT_PREFIX):
-        return new_package + "." + value[len(SHORT_PREFIX):]
     return value
 
 
-def rename_own_permission(value: str, new_package: str) -> str:
-    if value == OLD_PACKAGE or value.startswith(OLD_PACKAGE + "."):
-        return new_package + value[len(OLD_PACKAGE):]
+def _rename_permission_name(value: str, new_package: str) -> str:
+    if _is_blacklisted_perm(value):
+        return value
+    if OLD_PACKAGE in value:
+        return value.replace(OLD_PACKAGE, new_package)
     return value
 
 
-def collect_attribute_rewrites(blob: bytes, xml_start: int, strings: list, new_package: str):
-    """Walk XML chunks and return a list of (attr_file_offset, new_value).
+# ============================================================
+# AXML traversal: collect attribute rewrites + authorities map
+# ============================================================
 
-    The caller rewrites each attribute's string reference at that file
-    offset — not the underlying pool entry — so other consumers of the
-    same pool index (e.g. ``android:name`` class references) are not
-    disturbed.
+def _collect_manifest_rewrites(
+    blob: bytes, xml_start: int, strings: list[str], new_package: str,
+) -> tuple[list[tuple[int, str]], dict[str, str]]:
+    """Walk the AXML chunks and return:
+      - a list of (attribute file offset, new string value), so the
+        caller can intern each new value into the pool and rewrite the
+        attribute's string reference (without disturbing other
+        consumers of the same pool index)
+      - the authorities_map for the smali phase
     """
-    attr_name_indices = {
-        i: s for i, s in enumerate(strings)
-        if s in {"package", "authorities", "taskAffinity", "permission", "name"}
-    }
+    interesting_attrs = {"package", "authorities", "taskAffinity", "permission", "name"}
+    attr_name_indices = {i: s for i, s in enumerate(strings) if s in interesting_attrs}
     tag_name_indices = {
-        i: s for i, s in enumerate(strings) if s in {"manifest"} | PERMISSION_TAGS
+        i: s for i, s in enumerate(strings) if s in {"manifest"} | set(PERMISSION_TAGS)
     }
 
-    to_rewrite: list[tuple[int, str]] = []
+    rewrites: list[tuple[int, str]] = []
+    authorities_map: dict[str, str] = {}
+
+    attr_size_const = struct.calcsize(ATTR_FMT)  # 20 bytes
 
     off = xml_start
     blob_len = len(blob)
     while off + 8 <= blob_len:
-        ctype, chdr, csize = struct.unpack_from("<HHI", blob, off)
+        ctype, _chdr, csize = struct.unpack_from("<HHI", blob, off)
         if csize == 0 or off + csize > blob_len:
             break
         if ctype == CHUNK_XML_START_ELEMENT:
-            base = off + 16  # after 8-byte chunk hdr + line (4) + comment (4)
+            base = off + 16  # 8-byte chunk hdr + line(4) + comment(4)
             (_ns, name_idx, attr_start, attr_size, attr_count) = struct.unpack_from(
                 "<IIHHH", blob, base,
             )
@@ -153,31 +218,40 @@ def collect_attribute_rewrites(blob: bytes, xml_start: int, strings: list, new_p
             for a in range(attr_count):
                 ap = attr_base + a * attr_size
                 (_a_ns, a_name_idx, raw_val_idx,
-                 _tv_size, _tv_res0, tv_type, _tv_data) = struct.unpack_from(
+                 _tv_size, _tv_res0, _tv_type, _tv_data) = struct.unpack_from(
                     ATTR_FMT, blob, ap,
                 )
                 attr_name = attr_name_indices.get(a_name_idx)
                 if attr_name is None or raw_val_idx == 0xFFFFFFFF:
                     continue
-
                 original = strings[raw_val_idx]
-                if attr_name in ("package", "authorities", "taskAffinity"):
-                    new_value = rename_authority(original, new_package)
+                if attr_name == "package":
+                    new_value = _rename_package_name(original, new_package)
+                elif attr_name == "authorities":
+                    new_value = _rename_authorities_value(original, new_package, authorities_map)
+                elif attr_name == "taskAffinity":
+                    new_value = _rename_package_name(original, new_package)
                 elif attr_name == "permission":
-                    new_value = rename_own_permission(original, new_package)
+                    new_value = _rename_permission_name(original, new_package)
                 elif attr_name == "name" and tag_name in PERMISSION_TAGS:
-                    new_value = rename_own_permission(original, new_package)
+                    new_value = _rename_permission_name(original, new_package)
                 else:
                     continue
-
                 if new_value != original:
-                    to_rewrite.append((ap, new_value))
+                    rewrites.append((ap, new_value))
         off += csize
 
-    return to_rewrite
+    # `attr_size_const` is checked against the on-disk attr_size lazily;
+    # for Instagram's manifests they always match (20 bytes).
+    _ = attr_size_const
+    return rewrites, authorities_map
 
 
-def patch_manifest(path: str, new_package: str) -> None:
+# ============================================================
+# Phase 1: patch AndroidManifest.xml (binary AXML)
+# ============================================================
+
+def patch_manifest(path: str, new_package: str) -> dict[str, str]:
     with open(path, "rb") as f:
         blob = bytearray(f.read())
 
@@ -206,19 +280,20 @@ def patch_manifest(path: str, new_package: str) -> None:
 
     offsets = list(struct.unpack_from(f"<{sp_string_count}I", blob, offsets_off))
     pool_bytes = bytes(blob[strings_data_off:strings_data_end])
-
-    strings = [decode_pool_string(pool_bytes, o, is_utf8) for o in offsets]
+    strings = [_decode_pool_string(pool_bytes, o, is_utf8) for o in offsets]
 
     xml_start = pool_off + sp_chunk_size
-    rewrites = collect_attribute_rewrites(blob, xml_start, strings, new_package)
+    rewrites, authorities_map = _collect_manifest_rewrites(
+        blob, xml_start, strings, new_package,
+    )
     if not rewrites:
-        print("  Warning: nothing to rewrite — manifest may already be patched")
-        return
+        print("  Manifest: nothing to rewrite (already patched?)")
+        return authorities_map
 
-    # Allocate new pool indices for each distinct new value. Appending
-    # strings at the end extends string_count; we update offsets[] to
-    # include the new entries so every attribute referencing the new
-    # index resolves to the correct appended bytes.
+    # Intern each distinct new value into the pool. We append entries
+    # rather than mutating in place so other references to the old pool
+    # index (e.g. android:name=Lcom/instagram/android/.../...) stay
+    # untouched.
     new_value_to_index: dict[str, int] = {}
     appended = bytearray()
     new_offsets = list(offsets)
@@ -228,14 +303,10 @@ def patch_manifest(path: str, new_package: str) -> None:
             return new_value_to_index[value]
         idx = len(new_offsets)
         new_offsets.append(len(pool_bytes) + len(appended))
-        appended.extend(encode_pool_string(value, is_utf8))
+        appended.extend(_encode_pool_string(value, is_utf8))
         new_value_to_index[value] = idx
         return idx
 
-    # Rewrite the targeted attributes in the blob in place. Attribute
-    # entries encode the string reference twice (raw_val_idx and
-    # typed_value.data when type == TYPE_STRING), so update both.
-    attr_changes = 0
     for attr_ap, new_value in rewrites:
         new_idx = intern(new_value)
         (_a_ns, a_name_idx, _old_raw, tv_size, tv_res0, tv_type, tv_data) = struct.unpack_from(
@@ -246,7 +317,6 @@ def patch_manifest(path: str, new_package: str) -> None:
             ATTR_FMT, blob, attr_ap,
             _a_ns, a_name_idx, new_idx, tv_size, tv_res0, tv_type, new_tv_data,
         )
-        attr_changes += 1
 
     new_pool_bytes = pool_bytes + bytes(appended)
     pad = (-len(new_pool_bytes)) & 3
@@ -271,7 +341,6 @@ def patch_manifest(path: str, new_package: str) -> None:
         new_string_count, sp_style_count, sp_flags,
         new_strings_start, new_styles_start,
     )
-
     new_pool_chunk = new_pool_header + new_offsets_bytes + new_pool_bytes + styles_section
 
     rest = bytes(blob[pool_off + sp_chunk_size:])
@@ -281,16 +350,146 @@ def patch_manifest(path: str, new_package: str) -> None:
     with open(path, "wb") as f:
         f.write(new_blob)
 
-    print(f"  Rewrote {attr_changes} attribute(s) via {len(new_value_to_index)} new pool entries; package -> {new_package}")
-    for value, idx in sorted(new_value_to_index.items(), key=lambda kv: kv[1]):
-        print(f"    [{idx}] {value}")
+    print(f"  Manifest: rewrote {len(rewrites)} attribute(s) via {len(new_value_to_index)} new pool entries")
+    print(f"  Manifest: package -> {new_package}; {len(authorities_map)} authorities renamed")
+    return authorities_map
 
+
+# ============================================================
+# Phase 2: patch resources.arsc (binary)
+# ============================================================
+
+def _decode_arsc_package_name(raw: bytes) -> str:
+    return raw.decode("utf-16-le", errors="ignore").split("\x00", 1)[0]
+
+
+def _encode_arsc_package_name(name: str) -> bytes:
+    encoded = name.encode("utf-16-le")
+    if len(encoded) > PACKAGE_NAME_BYTES - 2:
+        raise ValueError(f"Package name too long for resources.arsc: {name}")
+    padded = encoded + b"\x00\x00"
+    padded += b"\x00" * (PACKAGE_NAME_BYTES - len(padded))
+    return padded
+
+
+def patch_resources_arsc(path: str, new_package: str) -> int:
+    if not os.path.isfile(path):
+        print(f"  resources.arsc not found at {path} (skipping)")
+        return 0
+
+    with open(path, "rb") as f:
+        blob = bytearray(f.read())
+
+    if len(blob) < 12:
+        raise SystemExit("resources.arsc too small")
+
+    table_type, table_hdr_size, total_size = struct.unpack_from("<HHI", blob, 0)
+    if table_type != RES_TABLE_TYPE:
+        raise SystemExit(f"Not a resources table (type=0x{table_type:04x})")
+    if total_size != len(blob):
+        print(f"  Warning: arsc header size={total_size}, actual={len(blob)}")
+    if table_hdr_size < 12:
+        raise SystemExit(f"Invalid RES_TABLE header size: {table_hdr_size}")
+
+    patched = 0
+    offset = table_hdr_size
+    table_end = min(total_size, len(blob))
+    while offset + 8 <= table_end:
+        chunk_type, chunk_header_size, chunk_size = struct.unpack_from("<HHI", blob, offset)
+        if chunk_size == 0 or offset + chunk_size > table_end:
+            break
+        if chunk_type == RES_TABLE_PACKAGE_TYPE:
+            if chunk_header_size < 12 + PACKAGE_NAME_BYTES:
+                raise SystemExit("Invalid RES_TABLE_PACKAGE header size")
+            name_off = offset + 12
+            current = _decode_arsc_package_name(bytes(blob[name_off:name_off + PACKAGE_NAME_BYTES]))
+            if current == OLD_PACKAGE:
+                blob[name_off:name_off + PACKAGE_NAME_BYTES] = _encode_arsc_package_name(new_package)
+                patched += 1
+        offset += chunk_size
+
+    if patched == 0:
+        print(f"  Warning: no RES_TABLE_PACKAGE chunk matched {OLD_PACKAGE!r}")
+    else:
+        with open(path, "wb") as f:
+            f.write(blob)
+        print(f"  resources.arsc: rewrote {patched} package chunk(s) -> {new_package}")
+    return patched
+
+
+# ============================================================
+# Phase 3: walk the smali tree
+# ============================================================
+
+def _smali_dirs(workdir: str):
+    for entry in sorted(os.listdir(workdir)):
+        if entry == "smali" or entry.startswith("smali_classes"):
+            full = os.path.join(workdir, entry)
+            if os.path.isdir(full):
+                yield full
+
+
+def patch_smali_tree(workdir: str, authorities_map: dict[str, str], new_package: str) -> None:
+    # Sort by length descending so we never let a shorter authority
+    # eat into the middle of a longer one.
+    sorted_auths = sorted(authorities_map.items(), key=lambda kv: len(kv[0]), reverse=True)
+    # Quoting limits matches to const-string operands, which is where
+    # authorities and package literals live in smali.
+    auth_replacements = [(f'"{old}"', f'"{new}"') for old, new in sorted_auths]
+    package_old = f'"{OLD_PACKAGE}"'
+    package_new = f'"{new_package}"'
+
+    files_changed = 0
+    files_scanned = 0
+    for smali_dir in _smali_dirs(workdir):
+        for dirpath, _dirnames, filenames in os.walk(smali_dir):
+            if SKIP_SMALI_PATH_FRAGMENT in dirpath + os.sep:
+                continue
+            for filename in filenames:
+                if not filename.endswith(".smali"):
+                    continue
+                files_scanned += 1
+                path = os.path.join(dirpath, filename)
+                with open(path, "r", encoding="utf-8") as f:
+                    original = f.read()
+                content = original
+                for old, new in auth_replacements:
+                    if old in content:
+                        content = content.replace(old, new)
+                if package_old in content:
+                    content = content.replace(package_old, package_new)
+                if content != original:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    files_changed += 1
+
+    print(f"  Smali: rewrote {files_changed}/{files_scanned} file(s)")
+
+
+# ============================================================
+# Entry point
+# ============================================================
 
 def main() -> int:
-    if len(sys.argv) < 3:
-        print("Usage: apply_clone_patch.py <AndroidManifest.xml> <new_package>")
+    parser = argparse.ArgumentParser(description="FeurStagram clone patch")
+    parser.add_argument("workdir", help="apktool decompiled source dir")
+    parser.add_argument(
+        "new_package", nargs="?", default=DEFAULT_NEW_PACKAGE,
+        help=f"new package id (default: {DEFAULT_NEW_PACKAGE})",
+    )
+    args = parser.parse_args()
+
+    workdir = args.workdir
+    new_package = args.new_package
+
+    manifest_path = os.path.join(workdir, "AndroidManifest.xml")
+    if not os.path.isfile(manifest_path):
+        print(f"  Error: {manifest_path} not found")
         return 1
-    patch_manifest(sys.argv[1], sys.argv[2])
+
+    authorities_map = patch_manifest(manifest_path, new_package)
+    patch_resources_arsc(os.path.join(workdir, "resources.arsc"), new_package)
+    patch_smali_tree(workdir, authorities_map, new_package)
     return 0
 
 

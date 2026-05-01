@@ -77,10 +77,6 @@
 
     check-cast v0, Landroid/content/Context;
 
-    # Clone-mode bootstrap: register notification channels on first resolution
-    # of the app Context. Idempotent (guarded by a static flag inside).
-    invoke-static {v0}, Lcom/feurstagram/FeurNotificationChannels;->ensureCreated(Landroid/content/Context;)V
-
     return-object v0
     :try_end_0
     .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0

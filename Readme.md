@@ -151,7 +151,9 @@ Feurstagram/
 ├── cleanup.sh                     # Removes build artifacts
 ├── apply_network_patch.py         # Network hook patch logic
 ├── apply_longpress_patch.py       # Injects the long-press hook on the Home tab
-├── apply_clone_patch.py           # Rewrites binary AndroidManifest.xml for --clone
+├── apply_clone_patch.py           # --clone: rewrites the binary AndroidManifest.xml
+│                                  #          and resources.arsc, then propagates
+│                                  #          authority + package renames into smali
 ├── artifacts/                     # Patched APK output directory
 └── patches/
     ├── FeurConfig.smali                  # SharedPreferences-backed toggles

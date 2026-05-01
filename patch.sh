@@ -92,11 +92,12 @@ patch_apk() {
     local INPUT_BASENAME
     INPUT_BASENAME="$(basename "$INPUT_APK" .apk)"
     local OUTPUT_DIR="$SCRIPT_DIR/artifacts"
-    local OUTPUT_SUFFIX=""
+    local OUTPUT_APK
     if [ "$CLONE_MODE" -eq 1 ]; then
-        OUTPUT_SUFFIX="_clone"
+        OUTPUT_APK="$OUTPUT_DIR/feurstagram_clone_patched_${INPUT_BASENAME}.apk"
+    else
+        OUTPUT_APK="$OUTPUT_DIR/feurstagram_patched_${INPUT_BASENAME}.apk"
     fi
-    local OUTPUT_APK="$OUTPUT_DIR/feurstagram_patched${OUTPUT_SUFFIX}_${INPUT_BASENAME}.apk"
     mkdir -p "$OUTPUT_DIR"
 
     if [ "$CLONE_MODE" -eq 1 ]; then
@@ -124,6 +125,11 @@ if last_error is not None:
     raise last_error
 PY
     fi
+    # We always decode with --no-res. Instagram packs layouts in a private
+    # encoding (values/layouts.xml entries like "L|AEE00|29C|13B3") that
+    # apktool can decode but aapt2 refuses to recompile, so a full decode
+    # never round-trips. For clone mode this means we patch the binary
+    # AndroidManifest.xml and resources.arsc directly (apply_clone_patch.py).
     apktool d --no-res "$INPUT_APK" -o "$WORK_DIR"
     echo -e "${GREEN}✓ Decompiled${NC}"
 
@@ -144,7 +150,6 @@ PY
     cp "$PATCHES_DIR/FeurHardcoreButtonClickListener.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
     cp "$PATCHES_DIR/FeurHardcoreConfirmClickListener.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
     cp "$PATCHES_DIR/FeurHardcoreConfirmButtonClickListener.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
-    cp "$PATCHES_DIR/FeurNotificationChannels.smali" "$WORK_DIR/smali_classes17/com/feurstagram/"
     echo -e "${GREEN}✓ Added FeurStagram smali classes${NC}"
 
     echo -e "\n${YELLOW}[3/6] Patching network layer...${NC}"
@@ -162,16 +167,8 @@ PY
 
     if [ "$CLONE_MODE" -eq 1 ]; then
         echo -e "\n${YELLOW}[4b/6] Rewriting package ID for clone install...${NC}"
-        python3 "$SCRIPT_DIR/apply_clone_patch.py" "$WORK_DIR/AndroidManifest.xml" "$CLONE_PACKAGE"
-        python3 "$SCRIPT_DIR/apply_clone_resources_patch.py" "$WORK_DIR/resources.arsc" "$CLONE_PACKAGE"
-        python3 "$SCRIPT_DIR/apply_clone_runtime_patch.py" "$WORK_DIR"
-        # Resolve Instagram's notification-channel enum name (Instagram
-        # reshuffles it every release) and wire FeurNotificationChannels to
-        # the version-specific class. Only needed for clone builds — in
-        # non-clone mode the package is "com.instagram.android" and
-        # FeurNotificationChannels short-circuits without using the enum.
-        python3 "$SCRIPT_DIR/apply_clone_notifications_patch.py" "$WORK_DIR"
-        echo -e "${GREEN}✓ Manifest/resources rewritten to ${CLONE_PACKAGE}${NC}"
+        python3 "$SCRIPT_DIR/apply_clone_patch.py" "$WORK_DIR" "$CLONE_PACKAGE"
+        echo -e "${GREEN}✓ Package rewritten to ${CLONE_PACKAGE}${NC}"
     fi
 
     # Force native libraries to be stored uncompressed in the rebuilt APK.
