@@ -27,6 +27,33 @@
     invoke-virtual {p0}, Landroid/view/ViewGroup;->getViewTreeObserver()Landroid/view/ViewTreeObserver;
     move-result-object v1
     invoke-virtual {v1, v0}, Landroid/view/ViewTreeObserver;->addOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V
+
+    # Also install the Instants (+ button) hider on the same root - it
+    # watches the whole window for the DM inbox's creation_entrypoint view.
+    new-instance v0, Lcom/feurstagram/FeurInstantsHider;
+    invoke-direct {v0, p0}, Lcom/feurstagram/FeurInstantsHider;-><init>(Landroid/view/ViewGroup;)V
+
+    invoke-virtual {p0}, Landroid/view/ViewGroup;->getViewTreeObserver()Landroid/view/ViewTreeObserver;
+    move-result-object v1
+    invoke-virtual {v1, v0}, Landroid/view/ViewTreeObserver;->addOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V
+
+    # And the Notes tray hider - watches for the cf_hub_recycler_view that
+    # holds the row of friends' note bubbles above the DM thread list.
+    new-instance v0, Lcom/feurstagram/FeurNotesHider;
+    invoke-direct {v0, p0}, Lcom/feurstagram/FeurNotesHider;-><init>(Landroid/view/ViewGroup;)V
+
+    invoke-virtual {p0}, Landroid/view/ViewGroup;->getViewTreeObserver()Landroid/view/ViewTreeObserver;
+    move-result-object v1
+    invoke-virtual {v1, v0}, Landroid/view/ViewTreeObserver;->addOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V
+
+    # And the Reels tab hider - hides the clips_tab icon in the bottom
+    # tab bar whenever the Reels block is enabled.
+    new-instance v0, Lcom/feurstagram/FeurReelsTabHider;
+    invoke-direct {v0, p0}, Lcom/feurstagram/FeurReelsTabHider;-><init>(Landroid/view/ViewGroup;)V
+
+    invoke-virtual {p0}, Landroid/view/ViewGroup;->getViewTreeObserver()Landroid/view/ViewTreeObserver;
+    move-result-object v1
+    invoke-virtual {v1, v0}, Landroid/view/ViewTreeObserver;->addOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V
     return-void
 .end method
 
@@ -265,6 +292,18 @@
     const-string v7, "Stories"
     const-string v8, "block_stories"
     invoke-static {}, Lcom/feurstagram/FeurConfig;->isStoriesBlocked()Z
+    move-result v9
+    invoke-static {p0, v4, v7, v8, v9}, Lcom/feurstagram/FeurSettings;->addRow(Landroid/content/Context;Landroid/widget/LinearLayout;Ljava/lang/String;Ljava/lang/String;Z)V
+
+    const-string v7, "Instants"
+    const-string v8, "block_instants"
+    invoke-static {}, Lcom/feurstagram/FeurConfig;->isInstantsBlocked()Z
+    move-result v9
+    invoke-static {p0, v4, v7, v8, v9}, Lcom/feurstagram/FeurSettings;->addRow(Landroid/content/Context;Landroid/widget/LinearLayout;Ljava/lang/String;Ljava/lang/String;Z)V
+
+    const-string v7, "Notes"
+    const-string v8, "block_notes"
+    invoke-static {}, Lcom/feurstagram/FeurConfig;->isNotesBlocked()Z
     move-result v9
     invoke-static {p0, v4, v7, v8, v9}, Lcom/feurstagram/FeurSettings;->addRow(Landroid/content/Context;Landroid/widget/LinearLayout;Ljava/lang/String;Ljava/lang/String;Z)V
 

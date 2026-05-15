@@ -193,3 +193,25 @@
     move-result v0
     return v0
 .end method
+
+
+.method public static isInstantsBlocked()Z
+    .locals 2
+
+    const-string v0, "block_instants"
+    const/4 v1, 0x1
+    invoke-static {v0, v1}, Lcom/feurstagram/FeurConfig;->getBlocked(Ljava/lang/String;Z)Z
+    move-result v0
+    return v0
+.end method
+
+
+.method public static isNotesBlocked()Z
+    .locals 2
+
+    const-string v0, "block_notes"
+    const/4 v1, 0x1
+    invoke-static {v0, v1}, Lcom/feurstagram/FeurConfig;->getBlocked(Ljava/lang/String;Z)Z
+    move-result v0
+    return v0
+.end method

@@ -17,6 +17,10 @@
   <a href="https://www.instagram.com/feurstagram_official/">
     <img src="https://img.shields.io/badge/Instagram-Official%20Account-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Official Instagram">
   </a>
+  <br>
+  <a href="https://github.com/sponsors/jean-voila">
+    <img src="https://img.shields.io/badge/GitHub%20Sponsors-Support%20the%20Project-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Support on GitHub Sponsors">
+  </a>
 </p>
 
 <p align="center">
@@ -73,8 +77,10 @@ combination.
 |---------|---------|------------|-----|
 | **Home Feed** | Blocked | Yes | Network-level blocking |
 | **Explore** | Blocked | Yes | Network-level blocking |
-| **Reels** | Blocked | Yes | Network-level blocking |
+| **Reels** | Blocked | Yes | Network-level blocking + Tab hidden |
 | **Stories** | Visible | Yes | Network-level blocking |
+| **Instants (+ button in DMs)** | Blocked | Yes | View visibility hidden |
+| **Notes (text bubbles above DMs)** | Blocked | Yes | View visibility hidden |
 | **Analytics & telemetry** | Blocked | No | Always blocked |
 | **Shopping / commerce preloads** | Blocked | No | Always blocked |
 | **Ads** | Blocked | No | Always blocked |
@@ -160,6 +166,8 @@ Feurstagram/
     ├── FeurHooks.smali                   # Network blocking hooks
     ├── FeurSettings.smali                # Settings dialog entry point
     ├── FeurHomeTabWatcher.smali          # Finds feed_tab in the tab_bar
+    ├── FeurInstantsHider.smali           # Hides the DM "Instants" + button
+    ├── FeurNotesHider.smali              # Hides the DM Notes tray (cf_hub_recycler_view)
     └── FeurSettingsLongClick.smali       # View.OnLongClickListener shim
 ```
 
